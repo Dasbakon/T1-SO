@@ -62,6 +62,16 @@ Elf32_Phdr *read_exec_file(FILE **execfile, char *filename, Elf32_Ehdr **ehdr)
 /* Writes the bootblock to the image file */
 void write_bootblock(FILE **imagefile, FILE *bootfile, Elf32_Ehdr *boot_header, Elf32_Phdr *boot_phdr)
 {
+	// 1 - Calcular tamanho do bootblock sem o elfheader
+	int boot_size = sizeof(*bootfile) - sizeof(Elf32_Ehdr);
+
+	char *buffer = (char *)malloc(sizeof(char) * boot_size);
+
+	// 2 - Passar o bloco inteiro sem o elfheader para o imagefile
+	fseek(bootfile, sizeof(Elf32_Ehdr), SEEK_SET);
+	fread(buffer, sizeof(char), boot_size, bootfile);
+	fwrite(buffer, sizeof(char), boot_size, *imagefile);
+	fclose(*imagefile);
 }
 
 /* Writes the kernel to the image file */
@@ -105,13 +115,14 @@ int main(int argc, char **argv)
 	Elf32_Phdr *kernel_program_header; // kernel ELF program header
 
 	/* build image file */
-	imagefile = fopen("image", "w");
+	imagefile = fopen("my_image", "w");
 	assert(imagefile);
 
 	/* read executable bootblock file */
-	read_exec_file(&bootfile, "bootblock", &boot_header);
+	boot_program_header = read_exec_file(&bootfile, "bootblock", &boot_header);
 
 	/* write bootblock */
+	write_bootblock(&imagefile, bootfile, boot_header, boot_program_header);
 
 	/* read executable kernel file */
 

@@ -36,7 +36,7 @@ Elf32_Phdr *read_exec_file(FILE **execfile, char *filename, Elf32_Ehdr **ehdr)
 	// Agora, com o _execfile_ aberto, temos que:
 	// 1 - ler o primeiro bloco e armazenar em um _buffer_
 	// 2 - Serializar o _buffer_ e passar para o _ehdr_ (a struct já existe em elf.h)
-	fread(buffer, sizeof(char), 52, *execfile);
+	fread(buffer, sizeof(char), sizeof(Elf32_Ehdr), *execfile);
 
 	*ehdr = (Elf32_Ehdr *)buffer;
 
@@ -62,21 +62,53 @@ Elf32_Phdr *read_exec_file(FILE **execfile, char *filename, Elf32_Ehdr **ehdr)
 /* Writes the bootblock to the image file */
 void write_bootblock(FILE **imagefile, FILE *bootfile, Elf32_Ehdr *boot_header, Elf32_Phdr *boot_phdr)
 {
+	// 1 - Pegar o tamanho do arquivo
+	int mem_size = (boot_phdr)->p_memsz;
+
+	// 2 - Posicionar a leitura no offset do bootfile
+	fseek(bootfile, boot_phdr->p_offset, SEEK_SET);
+
+	// 3 - Colocar os setores de programa num buffer
+	char *buffer = (char *)malloc(sizeof(char) * mem_size);
+	fread(buffer, sizeof(char), mem_size, bootfile);
+
+	// 4 - Copiar o buffer para o o imagefile
+	fwrite(buffer, sizeof(char), mem_size, *imagefile);
+
 	// 1 - Calcular tamanho do bootblock sem o elfheader
 	int boot_size = sizeof(*bootfile) - sizeof(Elf32_Ehdr);
 
-	char *buffer = (char *)malloc(sizeof(char) * boot_size);
+	return;
+
+	fclose(*imagefile);
 
 	// 2 - Passar o bloco inteiro sem o elfheader para o imagefile
 	fseek(bootfile, sizeof(Elf32_Ehdr), SEEK_SET);
 	fread(buffer, sizeof(char), boot_size, bootfile);
 	fwrite(buffer, sizeof(char), boot_size, *imagefile);
-	fclose(*imagefile);
+	//fclose(*imagefile);
 }
 
 /* Writes the kernel to the image file */
 void write_kernel(FILE **imagefile, FILE *kernelfile, Elf32_Ehdr *kernel_header, Elf32_Phdr *kernel_phdr)
 {
+	int mem_size = (kernel_phdr)->p_memsz;
+
+	fseek(kernelfile, kernel_phdr->p_offset, SEEK_SET);
+	char *buffer = (char *)malloc(sizeof(char) * mem_size);
+	fread(buffer, sizeof(char), mem_size, kernelfile);
+	fwrite(buffer, sizeof(char), mem_size, *imagefile);
+
+	return;
+
+	//
+
+	int kernel_size = sizeof(*kernelfile); // - sizeof(Elf32_Ehdr);
+
+	fseek(kernelfile, sizeof(Elf32_Ehdr), SEEK_SET);
+	fread(buffer, sizeof(char), kernel_size, kernelfile);
+	//fseek(*imagefile, 0, SEEK_END);
+	fwrite(buffer, sizeof(char), kernel_size, *imagefile);
 }
 
 /* Counts the number of sectors in the kernel */
@@ -115,7 +147,7 @@ int main(int argc, char **argv)
 	Elf32_Phdr *kernel_program_header; // kernel ELF program header
 
 	/* build image file */
-	imagefile = fopen("my_image", "w");
+	imagefile = fopen("my_image", "wb+");
 	assert(imagefile);
 
 	/* read executable bootblock file */
@@ -125,8 +157,13 @@ int main(int argc, char **argv)
 	write_bootblock(&imagefile, bootfile, boot_header, boot_program_header);
 
 	/* read executable kernel file */
+	kernel_program_header = read_exec_file(&kernelfile, "kernel", &kernel_header);
 
 	/* write kernel segments to image */
+	write_kernel(&imagefile, kernelfile, kernel_header, kernel_program_header);
+
+	/* close imagefile*/
+	fclose(imagefile);
 
 	/* tell the bootloader how many sectors to read to load the kernel */
 

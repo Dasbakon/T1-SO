@@ -9,20 +9,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #define IMAGE_FILE "./image"
 #define ARGS "[--extended] <bootblock> <executable-file> ..."
 
 #define SECTOR_SIZE 512				/* floppy sector size in bytes */
 #define BOOTLOADER_SIG_OFFSET 0x1fe /* offset for boot loader signature */
+#define MBR_SIGN 0x55aa				/* assinatura do MBR */
 // more defines...
 
 /* Reads in an executable file in ELF format*/
 Elf32_Phdr *read_exec_file(FILE **execfile, char *filename, Elf32_Ehdr **ehdr)
 {
-	Elf32_Word e_phoff = 0x0;
-	Elf32_Half e_phentsize = 0x0;
-	Elf32_Half e_phnum = 0x0;
+	Elf32_Word e_phoff = 0;
+	Elf32_Half e_phentsize = 0;
+	Elf32_Half e_phnum = 0;
 	Elf32_Phdr *pheader;
 	int phtable_size = 0;
 	char *buffer;
@@ -53,9 +55,9 @@ Elf32_Phdr *read_exec_file(FILE **execfile, char *filename, Elf32_Ehdr **ehdr)
 	buffer = realloc(buffer, phtable_size);
 	fread(buffer, sizeof(char), phtable_size, *execfile);
 	// 5 - Criar a variável _pheader_ do tipo Elf32_Phdr*
-	// 5 - Serializar o _buffer_ e passar para o _pheader_
+	// 6 - Serializar o _buffer_ e passar para o _pheader_
 	pheader = (Elf32_Phdr *)buffer;
-	// 6 - Retornar _pheader_
+	// 7 - Retornar _pheader_
 	return pheader;
 }
 
@@ -69,51 +71,51 @@ void write_bootblock(FILE **imagefile, FILE *bootfile, Elf32_Ehdr *boot_header, 
 	fseek(bootfile, boot_phdr->p_offset, SEEK_SET);
 
 	// 3 - Colocar os setores de programa num buffer
-	char *buffer = (char *)malloc(sizeof(char) * mem_size);
+	char *buffer = (char *)malloc(sizeof(char) * SECTOR_SIZE);
 	fread(buffer, sizeof(char), mem_size, bootfile);
 
 	// 4 - Copiar o buffer para o o imagefile
-	fwrite(buffer, sizeof(char), mem_size, *imagefile);
-
-	// 1 - Calcular tamanho do bootblock sem o elfheader
-	int boot_size = sizeof(*bootfile) - sizeof(Elf32_Ehdr);
-
-	return;
-
-	fclose(*imagefile);
-
-	// 2 - Passar o bloco inteiro sem o elfheader para o imagefile
-	fseek(bootfile, sizeof(Elf32_Ehdr), SEEK_SET);
-	fread(buffer, sizeof(char), boot_size, bootfile);
-	fwrite(buffer, sizeof(char), boot_size, *imagefile);
-	//fclose(*imagefile);
+	fwrite(buffer, sizeof(char), SECTOR_SIZE, *imagefile);
 }
 
 /* Writes the kernel to the image file */
 void write_kernel(FILE **imagefile, FILE *kernelfile, Elf32_Ehdr *kernel_header, Elf32_Phdr *kernel_phdr)
 {
 	int mem_size = (kernel_phdr)->p_memsz;
+	int sectors = ceil(mem_size / (double)SECTOR_SIZE);
+	int last_sector_bytes = mem_size % SECTOR_SIZE;
+	int seek = 0;
 
-	fseek(kernelfile, kernel_phdr->p_offset, SEEK_SET);
-	char *buffer = (char *)malloc(sizeof(char) * mem_size);
-	fread(buffer, sizeof(char), mem_size, kernelfile);
-	fwrite(buffer, sizeof(char), mem_size, *imagefile);
+	char *buffer = (char *)malloc(sizeof(char) * SECTOR_SIZE);
 
+	seek = fseek(kernelfile, kernel_phdr->p_offset, SEEK_SET);
+
+	for (int i = 0; i < sectors; i++)
+	{
+		// Ler um setor no buffer
+		(i == (sectors - 1)) ? fread(buffer, sizeof(char), last_sector_bytes, kernelfile) : fread(buffer, sizeof(char), SECTOR_SIZE, kernelfile);
+
+		// Passar buffer pra imagem
+		fwrite(buffer, sizeof(char), SECTOR_SIZE, *imagefile);
+	}
 	return;
+}
 
-	//
+void write_MBR_signature(FILE **imagefile)
+{
+	char *buffer = (char *)malloc(sizeof(char) * sizeof(short));
 
-	int kernel_size = sizeof(*kernelfile); // - sizeof(Elf32_Ehdr);
+	*(short *)buffer = ((MBR_SIGN >> 8) & 0xff) | ((MBR_SIGN << 8) & 0xff00);
 
-	fseek(kernelfile, sizeof(Elf32_Ehdr), SEEK_SET);
-	fread(buffer, sizeof(char), kernel_size, kernelfile);
-	//fseek(*imagefile, 0, SEEK_END);
-	fwrite(buffer, sizeof(char), kernel_size, *imagefile);
+	fseek(*imagefile, BOOTLOADER_SIG_OFFSET, SEEK_SET);
+	fwrite(buffer, sizeof(char), sizeof(short), *imagefile);
+	return;
 }
 
 /* Counts the number of sectors in the kernel */
 int count_kernel_sectors(Elf32_Ehdr *kernel_header, Elf32_Phdr *kernel_phdr)
 {
+
 	return 0;
 }
 
@@ -162,11 +164,13 @@ int main(int argc, char **argv)
 	/* write kernel segments to image */
 	write_kernel(&imagefile, kernelfile, kernel_header, kernel_program_header);
 
-	/* close imagefile*/
-	fclose(imagefile);
+	/* write the MBR signature to image */
+	write_MBR_signature(&imagefile);
 
 	/* tell the bootloader how many sectors to read to load the kernel */
 
+	/* close imagefile*/
+	fclose(imagefile);
 	/* check for  --extended option */
 	if (!strncmp(argv[1], "--extended", 11))
 	{

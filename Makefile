@@ -47,7 +47,7 @@ bootblock: bootblock.o
 	$(LD) $(LDOPTS) -Ttext 0x0 -o bootblock $<
 
 buildimage: buildimage.o
-	$(CC) -o buildimage $<
+	$(CC) -o buildimage $< -lm
 
 # Build an image to put on the floppy
 image: bootblock buildimage kernel
@@ -56,7 +56,7 @@ image: bootblock buildimage kernel
 # Put the image on the usb stick (these two stages are independent, as both
 # vmware and bochs can run using only the image file stored on the harddisk)	
 boot: image
-	dd if=./my_image of=/dev/sdb bs=512
+	dd if=./image of=/dev/sdb bs=512
 
 # Clean up!
 clean:
@@ -73,7 +73,7 @@ distclean: clean
 
 # How to compile buildimage
 buildimage.o:
-	$(CC) -c -o buildimage.o buildimage.c
+	$(CC) -c -o buildimage.o buildimage.c -lm
 
 # How to compile a C file
 %.o:%.c

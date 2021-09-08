@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}",
             "args": [
-                "-lm"
+                "--extended"
             ],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
